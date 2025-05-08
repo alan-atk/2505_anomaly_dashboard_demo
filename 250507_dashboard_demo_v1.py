@@ -76,6 +76,8 @@ def main():
     }
 
     st.dataframe(df_result)
+    st.write("以下セルを選択すると該当する散布図を表示")
+    st.write("ToDo: テーブル色調整")
     selectedCell = st_table_select_cell(df_result)
 
     if selectedCell and int(selectedCell["colIndex"]) > 3:
