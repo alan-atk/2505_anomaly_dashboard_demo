@@ -1,56 +1,72 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import collections
-import matplotlib.pyplot as plt
-
-from sklearn import datasets
-from sklearn.model_selection import train_test_split
 from st_table_select_cell import st_table_select_cell
-# Classifier Libraries
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import OneClassSVM
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, IsolationForest, GradientBoostingClassifier
-from sklearn.metrics import classification_report
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.covariance import EllipticEnvelope
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 
 
 @st.cache_data
-def run_model(data_list: list, random_seed: int, test_size: float) -> pd.DataFrame:
-    dict_result = collections.defaultdict(list)
-    for data in data_list:
-        dict_result["OrderID"].append("XXX")
-        dict_result["OrderEntity"].append("XXX")
-        dict_result["Quantity"].append("XXX")
-        dict_result["Amount"].append("XXX")
+def generate_data(random_seed=42) -> np.ndarray:
+    np.random.seed(random_seed)
 
-        X = data.data
-        y = data.target
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_seed)
+    # === 1. Generate Normal Data (bulk of the dataset)
+    quantity_normal = np.random.normal(loc=100, scale=10, size=300)
+    price_normal = np.random.normal(loc=1000, scale=100, size=300)
+    # === 2. Inject Anomalies of Different Types
+    # a. Extreme price, normal quantity
+    quantity_a = np.random.normal(loc=100, scale=5, size=5)
+    price_a = np.random.normal(loc=3000, scale=100, size=5)
+    # b. Extreme quantity, normal price
+    quantity_b = np.random.normal(loc=300, scale=10, size=5)
+    price_b = np.random.normal(loc=1000, scale=100, size=5)
+    # c. Both off but within bounds
+    quantity_c = np.random.normal(loc=180, scale=5, size=5)
+    price_c = np.random.normal(loc=1700, scale=50, size=5)
+    # === 3. Combine Data
+    X_normal = np.column_stack([quantity_normal, price_normal])
+    X_anom = np.vstack([
+        np.column_stack([quantity_a, price_a]),
+        np.column_stack([quantity_b, price_b]),
+        np.column_stack([quantity_c, price_c])
+    ])
+    return np.vstack([X_normal, X_anom])
 
-        classifiers = {
-            "IsolationForest": IsolationForest(random_state=random_seed),
-            "OneClassSVM": OneClassSVM(),
-            "LogisticRegression": LogisticRegression(random_state=random_seed),
-            "RandomForest": RandomForestClassifier(random_state=random_seed),
-            "GradientBoosting": GradientBoostingClassifier(random_state=random_seed),
-            "KNeighbors": KNeighborsClassifier(),
-            "DecisionTree": DecisionTreeClassifier(random_state=random_seed),
-        }
 
-        for key, classifier in classifiers.items():
-            try:
-                classifier.fit(X_train)
-            except TypeError:
-                classifier.fit(X_train, y_train)
-            y_pred_test = classifier.predict(X_test)
-            y_pred_test = np.where(y_pred_test == 1, 1, 0)
-            report = classification_report(y_test, y_pred_test, output_dict=True)
-            dict_result[key].append(f"{round(report['accuracy']*100, 1)}%")
+def standardize_data(X_all: np.ndarray) -> np.ndarray:
+    # Standardize features
+    scaler = StandardScaler()
+    return scaler.fit_transform(X_all)
 
-    df_result = pd.DataFrame(dict_result)
-    return df_result
+
+def convert_to_percentage(score):
+    return MinMaxScaler((0, 100)).fit_transform(score.reshape(-1, 1)).flatten()
+
+
+@st.cache_data
+def run_model(dataset, df_output, random_seed) -> pd.DataFrame:
+    model_isolation_forest = IsolationForest(random_state=random_seed)
+    model_isolation_forest.fit(dataset)
+    score_isolation_forest = model_isolation_forest.decision_function(dataset)
+    score_isolation_forest = 100 - convert_to_percentage(score_isolation_forest)
+    df_output["IsolationForest"] = score_isolation_forest
+
+    model_local_outlier_factor = LocalOutlierFactor()
+    model_local_outlier_factor.fit_predict(dataset)
+    score_local_outlier_factor = -model_local_outlier_factor.negative_outlier_factor_
+    score_local_outlier_factor = convert_to_percentage(score_local_outlier_factor)
+    df_output["LocalOutlierFactor"] = score_local_outlier_factor
+
+    model_elliptic_envelope = EllipticEnvelope(random_state=random_seed)
+    model_elliptic_envelope.fit(dataset)
+    score_elliptic_envelope = -model_elliptic_envelope.decision_function(dataset)
+    score_elliptic_envelope = convert_to_percentage(score_elliptic_envelope)
+    df_output["EllipticEnvelope"] = score_elliptic_envelope
+
+    return df_output
 
 
 def main():
@@ -59,56 +75,23 @@ def main():
 
     st.sidebar.title("Sidebar")
     random_seed = int(st.sidebar.text_input("Random seed:", "42"))
-    test_size = float(st.sidebar.text_input("Sampling size:", "0.2"))
 
-    # dummy datasets
-    data_list = [datasets.load_breast_cancer(), datasets.load_iris(), datasets.load_wine()]
-    df_result = run_model(data_list, random_seed, test_size)
+    data = generate_data(random_seed=random_seed)
+    data_standardized = standardize_data(data)
+    df_result = pd.DataFrame(data, columns=["数量", "単価"])
+    df_result = run_model(data_standardized, df_result, random_seed=random_seed)
 
-    classifiers = {
-        "IsolationForest": IsolationForest(random_state=random_seed),
-        "OneClassSVM": OneClassSVM(),
-        "LogisticRegression": LogisticRegression(random_state=random_seed),
-        "RandomForest": RandomForestClassifier(random_state=random_seed),
-        "GradientBoosting": GradientBoostingClassifier(random_state=random_seed),
-        "KNeighbors": KNeighborsClassifier(),
-        "DecisionTree": DecisionTreeClassifier(random_state=random_seed),
-    }
+    df_result["総合評価"] = df_result[["IsolationForest", "LocalOutlierFactor", "EllipticEnvelope"]].mean(axis=1).round(1)
 
+    np.random.seed(random_seed)
+    df_result.insert(0, "注文番号", [f"ORD_{str(i).zfill(4)}" for i in range(len(df_result))])
+    df_result.insert(1, "注文主体", np.random.choice(["部門A", "部門B", "部門C"], size=len(df_result)))
+    df_result.set_index("注文番号", inplace=True)
+    df_result["IsolationForest"] = df_result["IsolationForest"].round(1)
+    df_result["LocalOutlierFactor"] = df_result["LocalOutlierFactor"].round(1)
+    df_result["EllipticEnvelope"] = df_result["EllipticEnvelope"].round(1)
+    df_result["EllipticEnvelope"] = df_result["EllipticEnvelope"].round(1)
     st.dataframe(df_result)
-    # st.write("以下セルを選択すると該当する散布図を表示")
-    # st.write("ToDo: テーブル色調整")
-    selectedCell = st_table_select_cell(df_result)
-
-    if selectedCell and int(selectedCell["colIndex"]) > 3:
-        classifier_key = list(classifiers.keys())[int(selectedCell["colIndex"]) - 4]
-        classifier = classifiers[classifier_key]
-        selected_dataset_id = int(selectedCell["rowId"])
-        selected_dataset = data_list[selected_dataset_id]
-
-        X = selected_dataset.data
-        y = selected_dataset.target
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_seed)
-
-        try:
-            classifier.fit(X_train)
-        except TypeError:
-            classifier.fit(X_train, y_train)
-        y_pred_test = classifier.predict(X_test)
-        y_pred_test = np.where(y_pred_test == 1, 1, 0)
-
-        fig, ax = plt.subplots(figsize=(5, 5))
-        ax.scatter(y_test, y_pred_test, alpha=0.5)
-        ax.set_xlabel("Actual")
-        ax.set_ylabel("Predicted")
-        ax.set_title(f"Predicted vs Actual for {classifier_key}")
-        st.pyplot(fig)
-
-
-@st.cache_data
-def get_raw_data(filename: str) -> pd.DataFrame:
-    df_raw = pd.read_csv(filename)
-    return df_raw
 
 
 if __name__ == "__main__":
