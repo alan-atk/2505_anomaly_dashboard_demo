@@ -1,45 +1,19 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import collections
-from sklearn.preprocessing import RobustScaler
+import matplotlib.pyplot as plt
+
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
 from st_table_select_cell import st_table_select_cell
 # Classifier Libraries
 from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC, OneClassSVM
-from sklearn.neighbors import KNeighborsClassifier, LocalOutlierFactor
+from sklearn.svm import OneClassSVM
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, IsolationForest, GradientBoostingClassifier
 from sklearn.metrics import classification_report
-
-
-def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
-    rob_scaler = RobustScaler()
-    df["scaled_amount"] = rob_scaler.fit_transform(df["Amount"].values.reshape(-1, 1))
-    df["scaled_time"] = rob_scaler.fit_transform(df["Time"].values.reshape(-1, 1))
-
-    df.drop(["Time", "Amount"], axis=1, inplace=True)
-
-    scaled_amount = df["scaled_amount"]
-    scaled_time = df["scaled_time"]
-
-    df.drop(["scaled_amount", "scaled_time"], axis=1, inplace=True)
-    df.insert(0, "scaled_amount", scaled_amount)
-    df.insert(1, "scaled_time", scaled_time)
-
-    return df
-
-
-def sample_data(df: pd.DataFrame, random_seed) -> pd.DataFrame:
-    df = df.sample(frac=1)
-    fraud_df = df.loc[df["Class"] == 1]
-    non_fraud_df = df.loc[df["Class"] == 0][:len(fraud_df)]
-    normal_distributed_df = pd.concat([fraud_df, non_fraud_df])
-
-    return normal_distributed_df.sample(frac=1, random_state=random_seed)
 
 
 @st.cache_data
@@ -85,7 +59,7 @@ def main():
 
     st.sidebar.title("Sidebar")
     random_seed = int(st.sidebar.text_input("Random seed:", "42"))
-    test_size = float(st.sidebar.text_input("Random seed:", "0.2"))
+    test_size = float(st.sidebar.text_input("Sampling size:", "0.2"))
 
     # dummy datasets
     data_list = [datasets.load_breast_cancer(), datasets.load_iris(), datasets.load_wine()]
